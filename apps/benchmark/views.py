@@ -1,10 +1,11 @@
-from django.shortcuts import render
-from django.views.generic import View
 import requests
 from bs4 import BeautifulSoup
 import redis
 import json
 from django_celery_beat.models import CrontabSchedule, PeriodicTask
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
 try:
     schedule, _ = CrontabSchedule.objects.get_or_create(minute='51', hour='17', day_of_week='*', day_of_month='*',
                                                         month_of_year='*', timezone='Asia/Tehran'
@@ -24,7 +25,6 @@ try:
 
     PeriodicTask.objects.get_or_create(crontab=schedule, name='pc-benchmark-task',
                                        task='apps.benchmark.tasks.pc_scrapy_tasks')
-
 except:
     pass
 
@@ -32,7 +32,7 @@ except:
 r = redis.Redis(host='localhost', port=6379, db=0)
 
 
-class IndexView(View):
+class IndexApiView(APIView):
     def get(self, request):
         details = json.loads(r.get(f'benchmark:pc:fastest-server'))
         categories = [
@@ -41,14 +41,14 @@ class IndexView(View):
             {'title': 'اورکلاک', 'child': []},
             {'title': 'تک هسته', 'child': []},
         ]
-        context = {
+        data = {
             'details': details,
             'categories': categories,
         }
-        return render(request, 'benchmark/index.html', context)
+        return Response(data, status.HTTP_200_OK)
 
 
-class CpuBenchmarkView(View):
+class CpuBenchmarkApiView(APIView):
     def get(self, request, category, type):
         once = False
         categories = [
@@ -59,29 +59,39 @@ class CpuBenchmarkView(View):
         ]
         if category in ['overclock', 'single-thread']:
             once = True
+        try:
+            if once:
+                details = json.loads(r.get(f'benchmark:cpu:{category}:once'))
 
-        if once:
-            details = json.loads(r.get(f'benchmark:cpu:{category}:once'))
+            else:
+                details = json.loads(r.get(f'benchmark:cpu:{category}:{type}'))
+        except:
+            details = None
 
-        else:
-            details = json.loads(r.get(f'benchmark:cpu:{category}:{type}'))
+        data = {
+            'details': details,
+            'categories': categories
+        }
 
-        return render(request, 'benchmark/cpu-benchmark.html', {'details': details})
+        return Response(data, status.HTTP_200_OK)
 
 
-class CpuSingleBenchmarkView(View):
+class CpuSingleBenchmarkApiView(APIView):
     def get(self, request, url):
-        text = requests.get(f'https://www.cpubenchmark.net/cpu.php?{url}').text
-        soup = BeautifulSoup(text, 'html.parser').find('div', class_='desc-body')
-        details = []
-        soup.find('div', class_='desc-body')
-        for i in soup.find_all('p'):
-            text = i.get_text().split(':')
-            details.append({'name': text[0], 'amount': text[1:]})
-        return render(request, 'benchmark/cpu-single-benchmark.html', {'details': details})
+        try:
+            text = requests.get(f'https://www.cpubenchmark.net/cpu.php?{url}').text
+            soup = BeautifulSoup(text, 'html.parser').find('div', class_='desc-body')
+            details = []
+            soup.find('div', class_='desc-body')
+            for i in soup.find_all('p'):
+                text = i.get_text().split(':')
+                details.append({'name': text[0], 'amount': text[1:]})
+        except:
+            details = None
+        return Response(details, status.HTTP_200_OK)
 
 
-class GpuBenchmarkView(View):
+class GpuBenchmarkApiView(APIView):
     def get(self, request, category):
         categories = [
             {'title': 'g3d'},
@@ -92,24 +102,35 @@ class GpuBenchmarkView(View):
             {'title': 'رده پایین'},
             {'title': 'رایج'},
         ]
-        details = json.loads(r.get(f'benchmark:gpu:{category}'))
+        try:
+            details = json.loads(r.get(f'benchmark:gpu:{category}'))
+        except:
+            details = None
 
-        return render(request, 'benchmark/gpu-benchmark.html', {'details': details})
+        data = {
+            'details': details,
+            'categories': categories
+        }
+
+        return Response(data, status.HTTP_200_OK)
 
 
-class GpuSingleBenchmarkView(View):
+class GpuSingleBenchmarkApiView(APIView):
     def get(self, request, url):
-        text = requests.get(f'https://www.videocardbenchmark.net/video_lookup.php?{url}').text
-        soup = BeautifulSoup(text, 'html.parser').find('div', class_='desc-body')
-        details = []
-        soup.find('div', class_='desc-body')
-        for i in soup.find_all('p'):
-            text = i.get_text().split(':')
-            details.append({'name': text[0], 'amount': text[1:]})
-        return render(request, 'benchmark/gpu-single-benchmark.html', {'details': details})
+        try:
+            text = requests.get(f'https://www.videocardbenchmark.net/video_lookup.php?{url}').text
+            soup = BeautifulSoup(text, 'html.parser').find('div', class_='desc-body')
+            details = []
+            soup.find('div', class_='desc-body')
+            for i in soup.find_all('p'):
+                text = i.get_text().split(':')
+                details.append({'name': text[0], 'amount': text[1:]})
+        except:
+            details = None
+        return Response(details)
 
 
-class RamBenchmarkView(View):
+class RamBenchmarkApiView(APIView):
     def get(self, request, category):
         categories = [
             {'title': 'DDR 5', 'child': {'همه', 'نوشتن', 'خواندن', 'تاخیر حافظه'}},
@@ -117,25 +138,34 @@ class RamBenchmarkView(View):
             {'title': 'DDR 3', 'child': ['همه', 'نوشتن', 'خواندن', 'تاخیر حافظه']},
             {'title': 'DDR 2', 'child': ['همه', 'نوشتن', 'خواندن', 'تاخیر حافظه']},
         ]
-        details = json.loads(r.get(f'benchmark:ram:{category}'))
-        return render(request, 'benchmark/ram-benchmark.html', {'details': details})
+        try:
+            details = json.loads(r.get(f'benchmark:ram:{category}'))
+        except:
+            details = None
+        data = {
+            'details': details,
+            'categories': categories
+        }
+        return Response(data, status.HTTP_200_OK)
 
 
-class RamSingleBenchmarkView(View):
+class RamSingleBenchmarkApiView(APIView):
     def get(self, request, url):
-        text = requests.get(f'https://www.memorybenchmark.net/ram.php?{url}').text
-        soup = BeautifulSoup(text, 'html.parser').find('div', class_='desc-body')
-        details = []
-        soup.find('div', class_='desc-body')
-        for i in soup.find_all('p'):
-            text = i.get_text().split(':')
-            details.append({'name': text[0], 'amount': text[1:]})
-        return render(request, 'benchmark/ram-single-benchmark.html', {'details': details})
+        try:
+            text = requests.get(f'https://www.memorybenchmark.net/ram.php?{url}').text
+            soup = BeautifulSoup(text, 'html.parser').find('div', class_='desc-body')
+            details = []
+            soup.find('div', class_='desc-body')
+            for i in soup.find_all('p'):
+                text = i.get_text().split(':')
+                details.append({'name': text[0], 'amount': text[1:]})
+        except:
+            details = None
+        return Response(details, status.HTTP_200_OK)
 
 
-class DiskBenchmarkView(View):
+class DiskBenchmarkApiView(APIView):
     def get(self, request, category):
-        details = json.loads(r.get(f'benchmark:disk:{category}'))
         categories = [
             {'title': 'SSD', 'url': 'ssd'},
             {'title': 'رده بالا', 'url': 'disk-high'},
@@ -147,22 +177,35 @@ class DiskBenchmarkView(View):
             {'title': 'نوشتن و خواندن رندوم', 'url': 'random-seek-read-write'},
             {'title': 'رایج', 'url': 'common'},
         ]
-        return render(request, 'benchmark/disk-benchmark.html', {'details': details})
+        try:
+            details = json.loads(r.get(f'benchmark:disk:{category}'))
+        except:
+            details = None
+
+        data = {
+            'details': details,
+            'categories': categories
+        }
+
+        return Response(data, status.HTTP_200_OK)
 
 
-class DiskSingleBenchmarkView(View):
+class DiskSingleBenchmarkApiView(APIView):
     def get(self, request, url):
-        text = requests.get(f'https://www.harddrivebenchmark.net/hdd_lookup.php?{url}').text
-        soup = BeautifulSoup(text, 'html.parser').find('div', class_='desc-body')
-        details = []
-        soup.find('div', class_='desc-body')
-        for i in soup.find_all('p'):
-            text = i.get_text().split(':')
-            details.append({'name': text[0], 'amount': text[1:]})
-        return render(request, 'benchmark/disk-single-benchmark.html', {'details': details})
+        try:
+            text = requests.get(f'https://www.harddrivebenchmark.net/hdd_lookup.php?{url}').text
+            soup = BeautifulSoup(text, 'html.parser').find('div', class_='desc-body')
+            details = []
+            soup.find('div', class_='desc-body')
+            for i in soup.find_all('p'):
+                text = i.get_text().split(':')
+                details.append({'name': text[0], 'amount': text[1:]})
+        except:
+            details = None
+        return Response(details, status.HTTP_200_OK)
 
 
-class PcBenchmarkView(View):
+class PcBenchmarkApiView(APIView):
     def get(self, request, category):
         categories = [
             {'title': 'دسکتاپ', 'url': 'fastest-desktops'},
@@ -170,5 +213,12 @@ class PcBenchmarkView(View):
             {'title': 'لپتاپ', 'url': 'fastest-laptops'},
             {'title': 'سرور', 'url': 'fastest-server'},
         ]
-        details = json.loads(r.get(f'benchmark:pc:{category}'))
-        return render(request, 'benchmark/pc-benchmark.html', {'details': details})
+        try:
+            details = json.loads(r.get(f'benchmark:pc:{category}'))
+        except:
+            details = None
+        data = {
+            'details': details,
+            'categories': categories
+        }
+        return Response(data, status.HTTP_200_OK)

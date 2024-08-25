@@ -8,26 +8,6 @@ class UserLoginForm(forms.Form):
     password = forms.CharField(max_length=25)
 
 
-class UserRegisterForm(forms.Form):
-    phone = forms.CharField(max_length=11)
-    email = forms.EmailField()
-    fullname = forms.CharField(max_length=1000)
-    password = forms.CharField(max_length=25)
-    confirm_password = forms.CharField(max_length=25)
-
-    def clean_confirm_password(self):
-        confirm_password = self.cleaned_data['confirm_password']
-        password = self.cleaned_data['password']
-
-        if confirm_password == password:
-            if password.isdigit() or password.isalpha() or password.lower() == password or len(password) < 8:
-                raise forms.ValidationError('پسورد باید شامل اعداد و حروف کوچک و بزرگ باشد و حداقل 8 کاراکتر.')
-            else:
-                return confirm_password
-        else:
-            raise forms.ValidationError('پسورد و تکرار آن یکی نمی باشد')
-
-
 class UserRegisterActivationForm(forms.Form):
     code = forms.CharField(max_length=6)
     phone = forms.CharField(max_length=11)

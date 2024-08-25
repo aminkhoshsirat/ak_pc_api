@@ -1,14 +1,14 @@
 from django.urls import path
 from .views import *
-from apps.chat.views import AdminChatRoomView, AdminChatView
+from apps.chat.views import AdminChatRoomApiView, AdminChatApiView
 
 app_name = 'panel'
 
 urlpatterns = [
     path('', IndexView.as_view(), name='index'),
     path('site-detail', SiteDetailView.as_view(), name='site_detail'),
-    path('chat-box', AdminChatRoomView.as_view(), name='chat_box'),
-    path('chat/<id>', AdminChatView.as_view()),
+    path('chat-box', AdminChatRoomApiView.as_view(), name='chat_box'),
+    path('chat/<id>', AdminChatApiView.as_view()),
     path('products/', ProductListView.as_view(), name='products'),
     path('products-grid/', ProductGridListView.as_view(), name='products_grid'),
     path('products-grid-body/', ProductGridBodyView.as_view()),

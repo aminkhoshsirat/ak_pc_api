@@ -6,6 +6,8 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Q
 from django.shortcuts import render, redirect
 from django.views.generic import View, TemplateView, ListView, DetailView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
@@ -21,73 +23,50 @@ from apps.panel.models import SiteDetailModel
 import redis
 import random
 from apps.notification.models import UserNotificationModel
+from rest_framework.generics import ListAPIView
 from django.utils import timezone
 from utils.services import send_otp
 
 r = redis.Redis(host='localhost', port=6379, db=0)
 
 
-class UserLoginView(View):
-    def get(self, request):
-        return render(request, 'user/login.html')
-
+class LoginApiView(APIView):
     def post(self, request):
-        form = UserLoginForm(request.POST)
-        if form.is_valid():
-            cd = form.cleaned_data
-            phone_or_email = cd['phone_or_email']
-            user = UserModel.objects.filter(Q(phone=phone_or_email) | Q(email=phone_or_email)).first()
+        data = request.data
+        user_serializer = LoginSerializers(data=data)
+
+        if user_serializer.is_valid():
+            user = UserModel.objects.filter(Q(phone=data['phone_or_email']) | Q(email=data['phone_or_email'])).first()
             if user:
-                check_password = user.check_password(cd['password'])
-                if check_password:
+                check_pass = user.check_password(data['password'])
+
+                if check_pass:
                     login(request, user)
-                    return redirect('index')
+                    refresh_token = RefreshToken.for_user(user)
+                    access_token = AccessToken.for_user(user)
+
+                    return Response({"refresh": str(refresh_token), "access": str(access_token)})
+
                 else:
-                    messages.add_message(request, messages.ERROR, 'رمز عبور اشتباه است')
-                    return redirect(request.META['HTTP_REFERER'])
+                    return Response({'detail': 'password incorrect'})
+
             else:
-                messages.add_message(request, messages.ERROR, 'کاربر یافت نشد')
-                return redirect('user:login')
-        else:
-            return render(request, 'user/login.html')
+                return Response({'detail': 'user not found'})
+
+        return Response(user_serializer.errors)
 
 
-class UserLoginHeaderView(View):
+class UserRegisterApiView(APIView):
     def post(self, request):
-        form = UserLoginForm(request.POST)
-        if form.is_valid():
-            cd = form.cleaned_data
-            phone_or_email = cd['phone_or_email']
-            user = UserModel.objects.filter(Q(phone=phone_or_email) | Q(email=phone_or_email)).first()
-            if user:
-                check_password = user.check_password(cd['password'])
-                if check_password:
-                    login(request, user)
-                    return redirect(request.META['HTTP_REFERER'])
-                else:
-                    messages.add_message(request, messages.ERROR, 'رمز عبور اشتباه است')
-                    return redirect(request.META['HTTP_REFERER'])
-            else:
-                messages.add_message(request, messages.ERROR, 'کاربر یافت نشد')
-                return redirect(request.META['HTTP_REFERER'])
-        else:
-            return redirect(request.META['HTTP_REFERER'])
-
-
-class UserRegisterView(View):
-    def get(self, request):
-        return render(request, 'user/register.html')
-
-    def post(self, request):
-        form = UserRegisterForm(request.POST)
-        if form.is_valid():
-            cd = form.cleaned_data
-            phone = cd['phone']
+        data = request.data
+        serializer = RegisterSerializer(data=data)
+        if serializer.is_valid():
+            phone = data['phone']
             user = UserModel.objects.filter(phone=phone).first()
             if user:
                 if user.ban:
-                    return HttpResponse('کاربر ازسایت محروم شده است')
-                return HttpResponse('کاربر وجود دارد')
+                    return Response('کاربر ازسایت محروم شده است')
+                return Response('کاربر وجود دارد')
 
             else:
                 time = r.ttl(f'{phone}:activation_code')
@@ -95,67 +74,64 @@ class UserRegisterView(View):
                     code = random.randint(100000, 999999)
                     r.set(f'{phone}:activation_code', code, ex=600)
                     send_otp(phone, str(code))
-                    return render(request, 'user/send-code.html')
+                    return Response('کد ارسال شد')
                 else:
-                    return render(request, 'user/send-code.html')
+                    return Response('کد قبلا ارسال شده')
         else:
-            return HttpResponse(form.errors)
+            return Response('نامعتبر')
 
 
-class UserRegisterActivationView(View):
+class UserRegisterActivationApiView(APIView):
     def post(self, request):
-        form = UserRegisterActivationForm(request.POST)
-        if form.is_valid():
-            cd = form.cleaned_data
-            code = cd['code']
-            phone = cd['phone']
+        data = request.data
+        serializer = ActivationSerializer(data=data)
+        if serializer.is_valid():
+            code = data['code']
+            phone = data['phone']
             try:
                 sending_code = str(int(r.get(f'{phone}:activation_code')))
             except:
                 sending_code = ''
-            print(sending_code)
             if sending_code:
                 if sending_code == code:
-                    user = UserModel.objects.create_user(fullname=cd['fullname'], email=cd['email'], phone=phone, password=cd['password'])
+                    user = UserModel.objects.create_user(fullname=data['fullname'], email=data['email'], phone=phone, password=data['password'])
                     r.delete(f'{phone}:activation_code')
                     login(request, user)
-                    return HttpResponse('ok')
+                    refresh_token = RefreshToken.for_user(user)
+                    access_token = AccessToken.for_user(user)
+                    return Response({"refresh": str(refresh_token), "access": str(access_token)})
                 else:
-                    return HttpResponse('code is incorrect')
-            return HttpResponse('failed')
+                    return Response('کد اشتباه')
+            return Response('نامعتبر')
 
         else:
-            return render(request, 'user/register.html')
+            return Response('نامعتبر')
 
 
-class UserLogoutView(LoginRequiredMixin, View):
-    def get(self, request):
-        logout(request)
-        return redirect('index')
-
-
-class SendOtpCodeView(View):
+class SendOtpCodeApiView(APIView):
     def post(self, request):
-        form = SendOtpForm(request.POST)
-        if form.is_valid():
-            cd = form.cleaned_data
-            phone = cd['phone']
+        data = request.data
+        serializer = SendOtpSerializers(data=data)
+        if serializer.is_valid():
+            phone = data['phone']
             user = UserModel.objects.filter(phone=phone).first()
             if user:
                 if user.ban:
-                    messages.add_message(request, messages.ERROR, 'کاربر ازسایت محروم شده است')
+                    return Response('کاربر ازسایت محروم شده است')
                 else:
                     time = r.ttl(f'{phone}:activation_code')
                     if time < 420:
                         code = random.randint(100000, 999999)
                         r.set(f'{phone}:activation_code', code, ex=600)
                         send_otp(phone, code)
-
+                        return Response('کد ارسال شد')
+                    else:
+                        return Response('کد ارسال شده است')
             else:
-                return HttpResponse('کاربر وجود ندارد')
+                return Response('کاربر وجود ندارد')
 
         else:
-            return HttpResponse(form.errors)
+            return Response('نامعتبر')
 
 
 class PasswordForgetView(View):
@@ -268,33 +244,6 @@ class UserAddressView(ListView):
         return address
 
 
-# class UserAddressView(View):
-#     def get(self, request):
-#         context = {
-#             'api_key': mark_safe(NESHAN_API_KEY),
-#             'map_x': request.session.get('map_x'),
-#             'map_y': request.session.get('map_y'),
-#         }
-#         return render(request, 'user/neshan.html', context)
-#
-#     def post(self, request):
-#         form = NeshanSearchForm(request.POST)
-#         if form.is_valid():
-#             search = form.cleaned_data['search']
-#             map = requests.get(f'https://api.neshan.org/v4/geocoding?address={search}', headers={"Api-Key": 'service.a77ead3f22874b168c2b86ed615fd771'})
-#             map = map.json()['location']
-#             request.session['map_x'] = map['x']
-#             request.session['map_y'] = map['y']
-#             context = {
-#                 'api_key': mark_safe(NESHAN_API_KEY),
-#                 'map_x': request.session['map_x'],
-#                 'map_y': request.session['map_y'],
-#                 'search': search,
-#             }
-#
-#             return render(request, 'user/neshan.html', context)
-#
-#
 class UserAddAddressView(LoginRequiredMixin, View):
     def get(self, request):
         context = {
@@ -326,37 +275,11 @@ class UserAddAddressView(LoginRequiredMixin, View):
             return errors
 
 
-class NotificationView(ListView):
-    template_name = 'user/notification.html'
-    context_object_name = 'notifications'
-    paginate_by = 20
+class NotificationView(ListAPIView):
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         notifications = UserNotificationModel.objects.filter(Q(user=self.request.user) | Q(user=None), expire_date__gt=timezone.now()).order_by('-published_date')
         return notifications
 
-# ---------------------------- DRF --------------------------
 
-
-class LoginView(APIView):
-    def post(self, request):
-        data = request.data
-        user_serializer = LoginSerializers(data=data)
-
-        if user_serializer.is_valid():
-            user = UserModel.objects.filter(Q(phone=data['phone_or_email']) | Q(email=data['phone_or_email']))
-            if user:
-                check_pass = user.check_password(data['password'])
-
-                if check_pass:
-                    login(request, user)
-                    token = Token(user=user).key
-                    return Response({'token': token, 'detail': 'login success'}, status=status.HTTP_202_ACCEPTED)
-
-                else:
-                    return Response({'detail': 'password incorrect'}, status=status.HTTP_404_NOT_FOUND)
-
-            else:
-                return Response({'detail': 'user not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        return Response(user_serializer.errors)

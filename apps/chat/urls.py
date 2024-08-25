@@ -4,5 +4,5 @@ from .views import *
 app_name = 'chat'
 
 urlpatterns = [
-    path('chat', UserChatView.as_view())
+    path('chat', UserChatApiView.as_view())
 ]

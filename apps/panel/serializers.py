@@ -54,3 +54,15 @@ class AmazingOfferSerializers(serializers.ModelSerializer):
     class Meta:
         model = AmazingOfferModel
         fields = '__all__'
+
+
+class SuggestedProductSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = SuggestedProductsModel
+        fields = '__all__'
+
+
+class ContractUsSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = ContactUsModel
+        fields = '__all__'

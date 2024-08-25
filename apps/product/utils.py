@@ -195,7 +195,7 @@ def compare_products(category, id):
         product = CaseModel.objects.get(id=id)
 
     else:
-        product = ProductModel.objects.filter(id=id)
+        product = ProductModel.objects.filter(id=id).first()
         fields = [{'name': i.field.title, 'amount': i.amount} for i in ProductFieldModel.objects.filter(product=product)]
         return [product, fields]
 

@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from apps.product.views import IndexView, FaqApiView, ContactUsApiView, HeaderApiView, FooterApiView
+from apps.product.views import IndexApiView, FaqApiView, ContactUsApiView, HeaderApiView, FooterApiView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -13,11 +13,11 @@ urlpatterns = [
     path('footer', FooterApiView.as_view(), name='footer'),
     path('faq', FaqApiView.as_view(), name='faq'),
     path('contact-us', ContactUsApiView.as_view(), name='contact_us'),
-
+    path('', IndexApiView.as_view(), name='index'),
 
     path('admin/', admin.site.urls, name='admin'),
     path('admin_tools_stats/', include('admin_tools_stats.urls')),
-    path('', IndexView.as_view(), name='index'),
+
 
     path('product/', include('apps.product.urls', namespace='product')),
     path('blog/', include('apps.blog.urls', namespace='blog')),

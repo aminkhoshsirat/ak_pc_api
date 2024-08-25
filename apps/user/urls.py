@@ -1,14 +1,17 @@
 from django.urls import path
 from .views import *
+from  rest_framework_simplejwt.views import TokenBlacklistView
 
 app_name = 'user'
 
 urlpatterns = [
-    path('login', UserLoginView.as_view(), name='login'),
-    path('header/login', UserLoginHeaderView.as_view(), name='header_login'),
-    path('logout', UserLogoutView.as_view(), name='logout'),
-    path('register', UserRegisterView.as_view(), name='register'),
-    path('register/activate', UserRegisterActivationView.as_view()),
+    path('login', LoginApiView.as_view(), name='login'),
+    path('logout', TokenBlacklistView.as_view(), name='logout'),
+    path('register', UserRegisterApiView.as_view(), name='register'),
+    path('register/activate', UserRegisterActivationApiView.as_view()),
+    path('send-code', SendOtpCodeApiView.as_view(), name='send_otp_code'),
+
+
     path('forget-password', PasswordForgetView.as_view(), name='forget'),
     path('change-password', ChangePasswordView.as_view(), name='change_password'),
     path('dashboard', UserDashboardView.as_view(), name='dashboard'),
@@ -20,6 +23,6 @@ urlpatterns = [
     path('add-address', UserAddAddressView.as_view(), name='add_address'),
     path('order', OrderView.as_view(), name='order'),
     path('order/<pk>', OrderDetailView.as_view(), name='order_detail'),
-    path('send-code', SendOtpCodeView.as_view(), name='send_otp_code'),
+
     path('comments', UserCommentsView.as_view(), name='comments'),
 ]

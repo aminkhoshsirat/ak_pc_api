@@ -280,3 +280,21 @@ class OpticalDriveSerializers(serializers.ModelSerializer):
     class Meta:
         model = OpticalDriveModel
         fields = '__all__'
+
+
+class AssemblerSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = AssembledCaseModel
+        fields = '__all__'
+
+
+class LaptopSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = LaptopModel
+        fields = '__all__'
+
+
+class AllInOneSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = AllInOneModel
+        fields = '__all__'

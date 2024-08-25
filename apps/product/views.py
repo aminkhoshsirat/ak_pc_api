@@ -1,35 +1,26 @@
 import json
-
-from django.shortcuts import render, HttpResponse, Http404, redirect
-from django.views.generic import View, ListView, DetailView
-from apps.blog.models import BlogCategoryModel, BlogModel
-from apps.panel.models import SiteDetailModel, SuggestedProductsModel
-from apps.panel.models import AmazingOfferModel, AdvertisingBannerModel, InstantOfferModel, FaqQuestionModel
+import redis
 from django.db.models.aggregates import Count, Max, Min
-from .utils import *
-from .serializers import *
-from apps.panel.serializers import SiteDetailSerializer, InstantOfferSerializers, AdvertisingBannerSerializers
-from apps.blog.serializers import BlogCategorySerializers, BlogSerializers
+from django.db.models.functions import Greatest
+from django.contrib.postgres.search import TrigramSimilarity
+from django.utils.timezone import datetime
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
-from rest_framework.generics import CreateAPIView
-from rest_framework.generics import ListAPIView
-from rest_framework.mixins import RetrieveModelMixin, UpdateModelMixin, ListModelMixin
+from rest_framework.generics import ListAPIView, CreateAPIView
 from rest_framework.pagination import LimitOffsetPagination, PageNumberPagination
 from rest_framework.response import Response
 from rest_framework import status
-from django.contrib.postgres.search import TrigramSimilarity
-from django.db.models.functions import Greatest
-from django.shortcuts import get_object_or_404
-from .category_fields import product_fields
-from django.utils.timezone import datetime
-from apps.panel.serializers import AmazingOfferSerializers
-import redis
-from json import dumps
+from apps.blog.models import BlogCategoryModel, BlogModel
+from apps.panel.models import SiteDetailModel, SuggestedProductsModel
+from apps.panel.models import AmazingOfferModel, AdvertisingBannerModel, InstantOfferModel, FaqQuestionModel
+from apps.panel.serializers import SiteDetailSerializer, InstantOfferSerializers, AdvertisingBannerSerializers, ContractUsSerializers
+from apps.blog.serializers import BlogCategorySerializers, BlogSerializers
+from apps.panel.serializers import FaqSerializers, AmazingOfferSerializers, SuggestedProductSerializers
 from utils.services import get_client_ip
+from .serializers import *
+from .utils import *
+from .category_fields import product_fields
 from .forms import *
-from apps.panel.forms import ContactUsForm
-from apps.panel.serializers import FaqSerializers
-
 
 r = redis.Redis(host='localhost', port=6379, db=0)
 
@@ -73,7 +64,7 @@ class FaqApiView(APIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
-class ContactUsApiView(APIView): #--------------------------------------------------------------------------------------------------------------
+class ContactUsApiView(APIView):
     def get(self, request):
         data = {
             'site_detail': SiteDetailSerializer(SiteDetailModel.objects.first()).data
@@ -81,13 +72,13 @@ class ContactUsApiView(APIView): #----------------------------------------------
         return Response(data, status=status.HTTP_200_OK)
 
     def post(self, request):
-        form = ContactUsForm(request.POST)
-        if form.is_valid():
-            form.save()
-            return redirect('contact_us')
+        serializer = ContractUsSerializers(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response('Success')
 
         else:
-            return redirect('contact_us')
+            return Response('Failed')
 
 
 class ProductListApiView(APIView):
@@ -240,7 +231,7 @@ class ProductDetailApiView(APIView):
         return Response(data)
 
 
-class ProductCommentView(ListView): # -----------------------------------------------------------------------------------------------------------------
+class ProductCommentView(ListAPIView): # -----------------------------------------------------------------------------------------------------------------
     template_name = 'product/comments.html'
     model = ProductCommentModel
 
@@ -265,77 +256,83 @@ class ProductCommentView(ListView): # ------------------------------------------
 
 
 class ProductLikeApiView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, id):
-        if request.user.is_authenticated:
-            like_status = self.request.GET.get('like-status')
-            if like_status == 'like':
-                UserFavoriteProductModel.objects.get_or_create(user=request.user, product_id=id)
-                return Response('like success')
-            elif like_status == 'dislike':
-                product = UserFavoriteProductModel.objects.filter(user=request.user, product_id=id)
-                if product:
-                    product.delete()
-                    return Response('dislike success')
+        like_status = self.request.GET.get('like-status')
+        if like_status == 'like':
+            UserFavoriteProductModel.objects.get_or_create(user=request.user, product_id=id)
+            return Response('like success')
+        elif like_status == 'dislike':
+            product = UserFavoriteProductModel.objects.filter(user=request.user, product_id=id)
+            if product:
+                product.delete()
+                return Response('dislike success')
         return Response('error')
 
 
 class ProductAddApiView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, id):
         user = request.user
         r.hset(f'bucket:user:{user.phone}:product:{id}', mapping={'product': id, 'num': 1})
         return Response('success')
 
 
-class ProductDeleteView(View):
+class ProductDeleteApiView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, id):
         user = request.user
         r.delete(f'bucket:user:{user.phone}:product:{id}')
         return Response('success')
 
 
-class ProductChangeView(View):
+class ProductChangeApiView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request, id):
         num = request.GET.get('num')
         try:
             num = int(num)
-
         except:
             num = 1
         if num < 1:
             num = 1
         user = request.user
         r.hset(f'bucket:user:{user.phone}:product:{id}', mapping={'product': id, 'num': num})
-        return HttpResponse('success')
+        return Response('success')
 
 
-class ShowProductView(View):
+class ShowProductApiView(APIView):
     def get(self, request, id):
-        product = get_object_or_404(ProductModel, id=id)
-        context = {
-            'product': product,
-            'images': ProductImageModel.objects.filter(product=product),
-            'fields': product_fields(product),
-        }
-        return render(request, 'product/show-product.html', context)
+        try:
+            product = ProductModel.objects.get(id=id)
+            data = {
+                'product': ProductSerializers(product).data,
+                'images': ProductImageSerializers(ProductImageModel.objects.filter(product=product), many=True).data,
+                'fields': product_fields(product),
+            }
+        except:
+            data = {}
+        return Response(data, status=status.HTTP_200_OK)
 
 
-class ProductChartView(View):
+class ProductChartApiView(APIView):
     def get(self, request, id):
-        products = ProductPriceChartModel.objects.all()
+        products = ProductPriceChartModel.objects.filter(product_id=id)
         x = []
         y = []
         for i in products:
             x.append(i.date.strftime("%Y-%m-%d"))
             y.append(i.price)
-        print(x)
-        context = {
-            'x': dumps(x),
-            'y': dumps(y),
+        data = {
+            'x_position': x,
+            'y_position': y,
         }
-        return render(request, 'product/product-chart.html', context)
+        return Response(data, status=status.HTTP_200_OK)
 
 
-class IndexView(APIView):
+class IndexApiView(APIView):
+    queryset = ProductModel.objects.all()
+    serializer_class = ProductSerializers
     def get(self, request):
         products = ProductModel.objects.filter(active=True)
         categories = MainCategoryModel.objects.filter(active=True)
@@ -348,7 +345,7 @@ class IndexView(APIView):
         best_off_products = products.order_by('-off')[0:20]
         top_rating = products.order_by('-view_num')
         new_products = products.filter(available=True).order_by('-published_date')[0:20]
-        amazing_offers = [{'product': i.product, 'fields': product_fields(i.product), 'date': i.expired_date} for i in amazing_offers]
+        amazing_offers = [{'product': ProductSerializers(i.product).data, 'fields': product_fields(i.product), 'date': i.expired_date} for i in amazing_offers]
         suggested_products = SuggestedProductsModel.objects.filter(active=True)
         max_off_suggested_products = suggested_products.aggregate(max_off=Max('product__off'))
         site_detail = SiteDetailModel.objects.all().first()
@@ -359,126 +356,46 @@ class IndexView(APIView):
         gpus = GpuModel.objects.filter(active=True)
         all_in_ones = AllInOneModel.objects.filter(active=True)
         data = {
-            'categories': MainCategorySerializers(categories, many=True),
-            'brands': BrandSerializers(brands, many=True),
-            'blogs': blogs,
-            'top_rating': top_rating,
-            'best_selling_products': best_selling_products,
-            'best_off_products': best_off_products,
-            'new_products': new_products,
+            'categories': MainCategorySerializers(categories, many=True).data,
+            'brands': BrandSerializers(brands, many=True).data,
+            'blogs': BlogSerializers(blogs, many=True).data,
+            'top_rating': ProductSerializers(top_rating, many=True).data,
+            'best_selling_products': ProductSerializers(best_selling_products, many=True).data,
+            'best_off_products': ProductSerializers(best_off_products, many=True).data,
+            'new_products': ProductSerializers(new_products, many=True).data,
             'amazing_offers': amazing_offers,
-            'instant_offers': instant_offers,
-            'suggested_products': suggested_products,
+            'instant_offers': InstantOfferSerializers(instant_offers, many=True).data,
+            'suggested_products': SuggestedProductSerializers(suggested_products, many=True).data,
             'max_off_suggested_products': max_off_suggested_products,
-            'site_detail': site_detail,
-            'advertising_banner1': advertising_banners.filter(order=1, type='desktop').first(),
-            'advertising_banner2': advertising_banners.filter(order=2, type='desktop').first(),
-            'advertising_banner3': advertising_banners.filter(order=3, type='desktop').first(),
-            'advertising_banner4': advertising_banners.filter(order=4, type='desktop').first(),
-            'advertising_banner5': advertising_banners.filter(order=1, type='phone').first(),
-            'advertising_banner6': advertising_banners.filter(order=2, type='phone').first(),
-            'advertising_banner7': advertising_banners.filter(order=3, type='phone').first(),
-            'advertising_banner8': advertising_banners.filter(order=4, type='phone').first(),
-            'assembled_cases': assembled_cases,
-            'laptops': laptops,
-            'cpus': cpus,
-            'main_boards': main_boards,
-            'gpus': gpus,
-            'all_in_ones': all_in_ones,
+            'site_detail': SiteDetailSerializer(site_detail).data,
+            'advertising_banner1': AdvertisingBannerSerializers(advertising_banners.filter(order=1, type='desktop').first()).data,
+            'advertising_banner2': AdvertisingBannerSerializers(advertising_banners.filter(order=2, type='desktop').first()).data,
+            'advertising_banner3': AdvertisingBannerSerializers(advertising_banners.filter(order=3, type='desktop').first()).data,
+            'advertising_banner4': AdvertisingBannerSerializers(advertising_banners.filter(order=4, type='desktop').first()).data,
+            'advertising_banner5': AdvertisingBannerSerializers(advertising_banners.filter(order=1, type='phone').first()).data,
+            'advertising_banner6': AdvertisingBannerSerializers(advertising_banners.filter(order=2, type='phone').first()).data,
+            'advertising_banner7': AdvertisingBannerSerializers(advertising_banners.filter(order=3, type='phone').first()).data,
+            'advertising_banner8': AdvertisingBannerSerializers(advertising_banners.filter(order=4, type='phone').first()).data,
+            'assembled_cases': AssemblerSerializers(assembled_cases, many=True).data,
+            'laptops': LaptopSerializers(laptops, many=True).data,
+            'cpus': CpuSerializers(cpus, many=True).data,
+            'main_boards': MainBoardSerializers(main_boards, many=True).data,
+            'gpus': GpuSerializers(gpus, many=True).data,
+            'all_in_ones': AllInOneSerializers(all_in_ones, many=True).data,
         }
-        return render(request, 'index.html', context)
+        return Response(data, status=status.HTTP_200_OK)
 
 
-class CompareView(View):
+
+
+
+class CompareProductApiView(APIView):
     def get(self, request, category):
         id = self.request.GET.get('id')
         cp = compare_products(category, id)
-        context = {
-            'product': cp[0],
-            'fields': cp[1],
-        }
-        return render(request, 'product/compare.html', context)
-
-
-class CompareProductListView(ListView):
-    template_name = 'product/compare.html'
-    paginate_by = 20
-    model = ProductModel
-    context_object_name = 'products'
-
-    def get_queryset(self):
-        category = self.kwargs.get('category')
-        search = self.request.GET.get('search')
-        products = ProductModel.objects.filter(child_category__url=category, active=True)
-        if search:
-            products = products.annotate(similar=Greatest(
-                TrigramSimilarity('title', search),
-                TrigramSimilarity('url', search),
-                TrigramSimilarity('main_category__title', search),
-                TrigramSimilarity('child_category__title', search),
-            )).filter(similar__gt=0.1).order_by('-similar')
-        return products
-
-
-class CompareProductView(View):
-    def get(self, request):
-        category = self.request.GET.get('category')
-        id = self.request.GET.get('id')
-        cp = compare_products(category, id)
-        context = {
-            'product': cp[0],
-            'fields': cp[1],
-        }
-        return render(request, 'product/compare.html', context)
-
-
-#_______________________________DRF_____________________________
-
-
-class ProductDeleteApiView(APIView):
-    def get(self, request, id):
-        user = request.user
-        r.delete(f'bucket:user:{user.phone}:product:{id}')
-        return Response('success')
-
-
-class ProductChangeApiView(APIView):
-    def get(self, request, id):
-        num = request.GET.get('num')
-        try:
-            num = int(num)
-
-        except:
-            num = 1
-        if num < 1:
-            num = 1
-        user = request.user
-        r.hset(f'bucket:user:{user.phone}:product:{id}', mapping={'product': id, 'num': num})
-        return Response('success')
-
-
-class ShowProductApiView(APIView):
-    def get(self, request, id):
-        product = get_object_or_404(ProductModel, id=id)
         data = {
-            'product': ProductSerializers(product).data,
-            'images': ProductImageSerializers(ProductImageModel.objects.filter(product=product), many=True).data,
-            'fields': json.dumps(product_fields(product)),
-        }
-        return Response(data=data, status=status.HTTP_200_OK)
-
-
-class ProductChartApiView(APIView):
-    def get(self, request, id):
-        products = ProductPriceChartModel.objects.filter(product_id=id)
-        x = []
-        y = []
-        for i in products:
-            x.append(i.date.strftime("%Y-%m-%d"))
-            y.append(i.price)
-        data = {
-            'x': dumps(x),
-            'y': dumps(y),
+            'product': ProductSerializers(cp[0], many=True).data,
+            'fields': cp[1],
         }
         return Response(data=data, status=status.HTTP_200_OK)
 
@@ -500,13 +417,3 @@ class CompareProductListApiView(ListAPIView):
         return products
 
 
-class CompareProductApiView(APIView):
-    def get(self, request):
-        category = self.request.GET.get('category')
-        id = self.request.GET.get('id')
-        cp = compare_products(category, id)
-        data = {
-            'product': ProductSerializers(cp[0]).data,
-            'fields': json.dumps(cp[1]),
-        }
-        return Response(data=data, status=status.HTTP_200_OK)

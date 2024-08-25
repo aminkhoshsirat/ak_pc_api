@@ -5,8 +5,8 @@ from rest_framework import status
 from .models import *
 from apps.panel.models import SiteDetailModel
 from django.views.generic import View
-from django.contrib.auth.mixins import LoginRequiredMixin
 from apps.product.serializers import ProductSerializers
+from rest_framework.permissions import IsAuthenticated
 import requests
 import json
 import redis
@@ -15,7 +15,8 @@ import redis
 r = redis.Redis(host='localhost', port=6379, db=0)
 
 
-class BucketView(View):
+class BucketApiView(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         user = request.user
         products_ids = [int(r.hget(i, 'product')) for i in r.keys(f'bucket:user:{user.phone}:product:*')]
@@ -24,7 +25,8 @@ class BucketView(View):
         if products.exists():
             total_price = 0
             total_price_after_off = 0
-            bucket_products = [{'product': products.get(id=int(r.hget(i, 'product'))), 'num': int(r.hget(i, 'num'))} for i in
+            bucket_products = [{'product': ProductSerializers(products.get(id=int(r.hget(i, 'product')))).data,
+                                'num': int(r.hget(i, 'num'))} for i in
                                r.keys(f'bucket:user:{user.phone}:product:*')]
             for product in products:
                 total_price += product.price
@@ -32,14 +34,14 @@ class BucketView(View):
 
             off = total_price - total_price_after_off
 
-            context = {
+            data = {
                 'bucket_products': bucket_products,
                 'total_price': total_price,
                 'total_price_after_off': total_price_after_off,
                 'off': off,
             }
 
-            return render(request, 'bucket/cart.html', context)
+            return Response(data, status.HTTP_200_OK)
 
         else:
             site_detail = SiteDetailModel.objects.all().first()
@@ -50,6 +52,7 @@ class BucketView(View):
 
 
 class SmallBucketView(View):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         user = request.user
         products_ids = [int(r.hget(i, 'product')) for i in r.keys(f'bucket:user:{user.phone}:product:*')]
@@ -81,6 +84,7 @@ class SmallBucketView(View):
 
 
 class DeleteProductBucketView(View):
+    permission_classes = [IsAuthenticated]
     def get(self, request, id):
         user = request.user
         r.delete(f'bucket:user:{user.phone}:product:{id}')
@@ -143,34 +147,6 @@ class OrderPayView(View):
 
 
 #------------------------------------Api Views-----------------------------------
-
-
-class BucketApiView(APIView):
-    def get(self, request):
-        user = request.user
-        products_ids = [int(r.hget(i, 'product')) for i in r.keys(f'bucket:user:{user.phone}:product:*')]
-        products = ProductModel.objects.filter(id__in=products_ids)
-
-        if products.exists():
-            total_price = 0
-            total_price_after_off = 0
-            bucket_products = [{'product': ProductSerializers(products.get(id=int(r.hget(i, 'product')))),
-                                'num': json.dumps(int(r.hget(i, 'num')))}
-                               for i in r.keys(f'bucket:user:{user.phone}:product:*')]
-            for product in products:
-                total_price += product.price
-                total_price_after_off += product.price_after_off
-
-            off = total_price - total_price_after_off
-
-            data = {
-                'bucket_products': bucket_products,
-                'total_price': json.dumps(total_price),
-                'total_price_after_off': json.dumps(total_price_after_off),
-                'off': json.dumps(off),
-            }
-
-            return Response(data, status=status.HTTP_200_OK)
 
 
 class DeleteProductBucketApiView(APIView):
