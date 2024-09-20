@@ -3,7 +3,7 @@ import redis
 from django.db.models.aggregates import Count, Max, Min
 from django.db.models.functions import Greatest
 from django.contrib.postgres.search import TrigramSimilarity
-from django.utils.timezone import datetime
+from django.utils.timezone import now, datetime
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView, CreateAPIView
@@ -21,6 +21,7 @@ from .serializers import *
 from .utils import *
 from .category_fields import product_fields
 from .forms import *
+from rest_framework_tracking.mixins import LoggingMixin
 
 r = redis.Redis(host='localhost', port=6379, db=0)
 
@@ -66,10 +67,8 @@ class FaqApiView(APIView):
 
 class ContactUsApiView(APIView):
     def get(self, request):
-        data = {
-            'site_detail': SiteDetailSerializer(SiteDetailModel.objects.first()).data
-        }
-        return Response(data, status=status.HTTP_200_OK)
+        site_detail = SiteDetailSerializer(SiteDetailModel.objects.first()).data
+        return Response(site_detail, status=status.HTTP_200_OK)
 
     def post(self, request):
         serializer = ContractUsSerializers(data=request.data)
@@ -330,15 +329,15 @@ class ProductChartApiView(APIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
-class IndexApiView(APIView):
+class IndexApiView(LoggingMixin, APIView):
     queryset = ProductModel.objects.all()
     serializer_class = ProductSerializers
     def get(self, request):
         products = ProductModel.objects.filter(active=True)
         categories = MainCategoryModel.objects.filter(active=True)
         brands = BrandModel.objects.filter(active=True)
-        amazing_offers = AmazingOfferModel.objects.filter(active=True, expired_date__gt=datetime.now())
-        instant_offers = InstantOfferModel.objects.filter(active=True, expired_date__gt=datetime.now())
+        amazing_offers = AmazingOfferModel.objects.filter(active=True, expired_date__gt=now())
+        instant_offers = InstantOfferModel.objects.filter(active=True, expired_date__gt=now())
         advertising_banners = AdvertisingBannerModel.objects.filter(active=True)
         blogs = BlogModel.objects.select_related('category').prefetch_related('auther').filter(active=True)[0:10]
         best_selling_products = products.order_by('-sell')[0:20]
@@ -384,9 +383,6 @@ class IndexApiView(APIView):
             'all_in_ones': AllInOneSerializers(all_in_ones, many=True).data,
         }
         return Response(data, status=status.HTTP_200_OK)
-
-
-
 
 
 class CompareProductApiView(APIView):

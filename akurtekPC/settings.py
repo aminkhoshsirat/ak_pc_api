@@ -44,7 +44,8 @@ INSTALLED_APPS = [
     'django_celery_beat',
     'azbankgateways',
     'django_ckeditor_5',
-    "django_htmx",
+    'django_htmx',
+    'rest_framework_tracking',
 
     # External Apps
 
@@ -63,6 +64,7 @@ INSTALLED_APPS = [
 
 AUTH_USER_MODEL = 'user.UserModel'
 
+SITE_ID = 1
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
